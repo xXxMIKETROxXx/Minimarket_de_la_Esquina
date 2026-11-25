@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { StoreProvider, useStore } from './components/StoreContext.jsx';
 import { AdminLayout, StoreLayout } from './components/Layout.jsx';
 import { Home, Products, ProductDetail, Categories, Offers, Register, Login, About, Blogs, BlogDetail, Contact, Cart, Checkout, PurchaseResult } from './pages/PublicPages.jsx';
@@ -6,12 +6,16 @@ import { AdminDashboard, AdminProducts, AdminProductDetail, AdminProductForm, Ad
 
 function Guard({ children }) {
   const { session } = useStore();
-  return session?.tipo === 'Administrador' ? children : <Navigate to="/login" replace />;
+  const allowed = session?.tipo === 'Administrador' || session?.tipo === 'Vendedor';
+  return allowed ? children : <Navigate to="/login" replace />;
+}
+
+function AdminOnly({ children }) {
+  const { session } = useStore();
+  return session?.tipo === 'Administrador' ? children : <Navigate to="/admin" replace />;
 }
 
 function RoutesView() {
-  const store = useStore();
-  const navigate = useNavigate();
   return <Routes>
     <Route element={<StoreLayout />}>
       <Route index element={<Home />} />
@@ -33,16 +37,16 @@ function RoutesView() {
     <Route path="admin" element={<Guard><AdminLayout /></Guard>}>
       <Route index element={<AdminDashboard />} />
       <Route path="productos" element={<AdminProducts />} />
-      <Route path="productos/nuevo" element={<AdminProductForm />} />
+      <Route path="productos/nuevo" element={<AdminOnly><AdminProductForm /></AdminOnly>} />
       <Route path="productos/:id" element={<AdminProductDetail />} />
-      <Route path="productos/:id/editar" element={<AdminProductForm />} />
-      <Route path="categorias" element={<AdminCategories />} />
+      <Route path="productos/:id/editar" element={<AdminOnly><AdminProductForm /></AdminOnly>} />
+      <Route path="categorias" element={<AdminOnly><AdminCategories /></AdminOnly>} />
       <Route path="ordenes" element={<AdminOrders />} />
       <Route path="ordenes/:id" element={<AdminOrderDetail />} />
-      <Route path="usuarios" element={<AdminUsers />} />
-      <Route path="usuarios/nuevo" element={<AdminUserForm />} />
-      <Route path="usuarios/:run" element={<AdminUserForm />} />
-      <Route path="reportes" element={<AdminReports />} />
+      <Route path="usuarios" element={<AdminOnly><AdminUsers /></AdminOnly>} />
+      <Route path="usuarios/nuevo" element={<AdminOnly><AdminUserForm /></AdminOnly>} />
+      <Route path="usuarios/:run" element={<AdminOnly><AdminUserForm /></AdminOnly>} />
+      <Route path="reportes" element={<AdminOnly><AdminReports /></AdminOnly>} />
       <Route path="perfil" element={<AdminProfile />} />
     </Route>
   </Routes>;

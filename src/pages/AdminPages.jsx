@@ -17,19 +17,27 @@ import {
 } from '../data/tiendaData.js';
 
 export function AdminDashboard() {
-  const { products, orders, categories } = useStore();
+  const { products, orders, categories, session } = useStore();
+  const isAdmin = session?.tipo === 'Administrador';
   const criticalProducts = products.filter((product) => product.stock <= product.critico);
-  const stats = [
-    ['Productos', products.length, '/admin/productos'],
-    ['Categorías', categories.length, '/admin/categorias'],
-    ['Órdenes', orders.length, '/admin/ordenes'],
-    ['Stock crítico', criticalProducts.length, '/admin/reportes'],
-  ];
+
+  const stats = isAdmin
+    ? [
+        ['Productos', products.length, '/admin/productos'],
+        ['Categorías', categories.length, '/admin/categorias'],
+        ['Órdenes', orders.length, '/admin/ordenes'],
+        ['Stock crítico', criticalProducts.length, '/admin/reportes'],
+      ]
+    : [
+        ['Productos', products.length, '/admin/productos'],
+        ['Órdenes', orders.length, '/admin/ordenes'],
+        ['Stock crítico', criticalProducts.length, '/admin/productos'],
+      ];
 
   return (
     <>
-      <PageTitle eyebrow="Administración · Minimarket La Esquina" title="Panel principal">
-        <p>Resumen de la información disponible en este navegador.</p>
+      <PageTitle eyebrow={`Panel ${session?.tipo || 'Administración'} · Minimarket La Esquina`} title="Panel principal">
+        <p>Datos sincronizados en tiempo real con la API REST y base de datos SQLite.</p>
       </PageTitle>
       <div className="row row-cols-2 row-cols-lg-4 g-3 mb-4">
         {stats.map(([label, count, path]) => (
@@ -42,31 +50,33 @@ export function AdminDashboard() {
         ))}
       </div>
       <div className="admin-shortcuts">
-        <Link to="/admin/productos/nuevo" className="btn btn-success">Nuevo producto</Link>
-        <Link to="/admin/usuarios/nuevo" className="btn btn-outline-success">Crear usuario</Link>
+        {isAdmin && <Link to="/admin/productos/nuevo" className="btn btn-success">Nuevo producto</Link>}
+        {isAdmin && <Link to="/admin/usuarios/nuevo" className="btn btn-outline-success">Crear usuario</Link>}
+        <Link to="/admin/productos" className="btn btn-outline-secondary">Ver productos</Link>
         <Link to="/admin/ordenes" className="btn btn-outline-secondary">Revisar órdenes</Link>
       </div>
       <p className="text-secondary mt-4">
-        Los datos son una simulación local. La comprobación de rol no sustituye la seguridad de un servidor.
+        Sesión autenticada mediante Token JWT con permisos de <strong>{session?.tipo}</strong>.
       </p>
     </>
   );
 }
 
 export function AdminProducts() {
-  const { products, run } = useStore();
+  const { products, run, session } = useStore();
+  const isAdmin = session?.tipo === 'Administrador';
   const criticalProducts = products.filter((product) => product.stock <= product.critico);
 
-  function removeProduct(product) {
+  async function removeProduct(product) {
     if (window.confirm(`¿Eliminar ${product.nombre}?`)) {
-      run(() => deleteProduct(product.id));
+      await run(() => deleteProduct(product.id));
     }
   }
 
   return (
     <>
-      <PageTitle eyebrow="Catálogo local" title="Gestión de productos">
-        <Link to="/admin/productos/nuevo" className="btn btn-success">Nuevo producto</Link>
+      <PageTitle eyebrow="Catálogo conectado a SQLite" title="Gestión de productos">
+        {isAdmin && <Link to="/admin/productos/nuevo" className="btn btn-success">Nuevo producto</Link>}
       </PageTitle>
       <div className="table-responsive">
         <table className="table table-hover align-middle admin-table">
@@ -91,9 +101,14 @@ export function AdminProducts() {
                     : <span className="badge text-bg-success">Normal</span>}
                 </td>
                 <td>
-                  <button className="btn btn-sm btn-outline-danger" onClick={() => removeProduct(product)}>
-                    Eliminar
-                  </button>
+                  <Link className="btn btn-sm btn-outline-secondary me-2" to={`/admin/productos/${product.id}`}>
+                    Ver
+                  </Link>
+                  {isAdmin && (
+                    <button className="btn btn-sm btn-outline-danger" onClick={() => removeProduct(product)}>
+                      Eliminar
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -108,7 +123,8 @@ export function AdminProducts() {
 
 export function AdminProductDetail() {
   const { id } = useParams();
-  const { products } = useStore();
+  const { products, session } = useStore();
+  const isAdmin = session?.tipo === 'Administrador';
   const product = products.find((item) => item.id === id);
 
   if (!product) {
@@ -118,7 +134,7 @@ export function AdminProductDetail() {
   return (
     <>
       <PageTitle eyebrow={product.codigo} title={product.nombre}>
-        <Link className="btn btn-success" to={`/admin/productos/${product.id}/editar`}>Editar producto</Link>
+        {isAdmin && <Link className="btn btn-success" to={`/admin/productos/${product.id}/editar`}>Editar producto</Link>}
       </PageTitle>
       <section className="detail-layout">
         <div className="detail-image">
@@ -155,8 +171,9 @@ export function AdminProductForm() {
     setForm({ ...form, [field]: value });
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
+    setError('');
     const product = {
       ...form,
       id: existing ? existing.id : form.codigo.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -174,7 +191,7 @@ export function AdminProductForm() {
       return;
     }
 
-    const savedProduct = run(() => {
+    const savedProduct = await run(() => {
       if (existing) return updateProduct(existing.id, product);
       return createProduct(product);
     });
@@ -191,6 +208,7 @@ export function AdminProductForm() {
           <div className="col-md-4">
             <label className="form-label" htmlFor="product-code">Código</label>
             <input id="product-code" className="form-control" value={form.codigo}
+              disabled={Boolean(existing)}
               onChange={(event) => updateField('codigo', event.target.value)} required />
           </div>
           <div className="col-md-8">
@@ -253,9 +271,9 @@ export function AdminCategories() {
   const [name, setName] = useState('');
   const [editing, setEditing] = useState('');
 
-  function save(event) {
+  async function save(event) {
     event.preventDefault();
-    const saved = run(() => {
+    const saved = await run(() => {
       if (editing) return updateCategory(editing, name);
       return createCategory(name);
     });
@@ -306,7 +324,7 @@ export function AdminOrders() {
   const { orders } = useStore();
   return (
     <>
-      <PageTitle eyebrow="Ventas simuladas" title="Órdenes y boletas" />
+      <PageTitle eyebrow="Registros persistentes en SQLite" title="Órdenes y boletas" />
       <div className="table-responsive">
         <table className="table table-hover align-middle admin-table">
           <thead><tr><th>Orden</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Total</th><th /></tr></thead>
@@ -365,7 +383,7 @@ export function AdminUsers() {
   const { users, orders, run } = useStore();
   return (
     <>
-      <PageTitle eyebrow="Cuentas locales" title="Usuarios">
+      <PageTitle eyebrow="Cuentas registradas en SQLite" title="Usuarios">
         <Link to="/admin/usuarios/nuevo" className="btn btn-success">Nuevo usuario</Link>
       </PageTitle>
       <div className="table-responsive">
@@ -403,8 +421,8 @@ export function AdminUserForm() {
     return <><PageTitle title="Usuario no encontrado" /><Link to="/admin/usuarios">Volver a usuarios</Link></>;
   }
 
-  function saveUser(form) {
-    const saved = run(() => {
+  async function saveUser(form) {
+    const saved = await run(() => {
       if (current) return updateUser(current.run, form);
       return createUser(form);
     });
@@ -448,11 +466,11 @@ export function AdminReports() {
 
   return (
     <>
-      <PageTitle eyebrow="Cifras guardadas en este navegador" title="Reportes" />
+      <PageTitle eyebrow="Cifras consolidadas desde la API" title="Reportes" />
       <div className="row row-cols-1 row-cols-md-3 g-3 mb-4">
-        <div className="col"><div className="stat-tile"><span>Órdenes exitosas simuladas</span><strong>{successfulOrders.length}</strong></div></div>
-        <div className="col"><div className="stat-tile"><span>Unidades vendidas simuladas</span><strong>{unitsSold}</strong></div></div>
-        <div className="col"><div className="stat-tile"><span>Total registrado</span><strong>{money(total)}</strong></div></div>
+        <div className="col"><div className="stat-tile"><span>Órdenes pagadas</span><strong>{successfulOrders.length}</strong></div></div>
+        <div className="col"><div className="stat-tile"><span>Unidades vendidas</span><strong>{unitsSold}</strong></div></div>
+        <div className="col"><div className="stat-tile"><span>Total recaudado</span><strong>{money(total)}</strong></div></div>
       </div>
       <h2 className="h5">Productos con stock crítico</h2>
       <div className="table-responsive">
@@ -465,7 +483,7 @@ export function AdminReports() {
           </tbody>
         </table>
       </div>
-      <p className="text-secondary">Las cifras corresponden únicamente a órdenes guardadas en esta simulación local.</p>
+      <p className="text-secondary">Las cifras reflejan las boletas almacenadas en la base de datos SQLite.</p>
     </>
   );
 }
@@ -473,12 +491,13 @@ export function AdminReports() {
 export function AdminProfile() {
   const { session, run, refresh } = useStore();
   const [saved, setSaved] = useState(false);
+  const isAdmin = session?.tipo === 'Administrador';
 
-  function saveProfile(form) {
-    const updatedUser = run(() => updateUser(session.run, form));
+  async function saveProfile(form) {
+    const updatedUser = await run(() => updateUser(session.run, form));
     if (updatedUser) {
       window.localStorage.setItem('minimarket.sesion', JSON.stringify(updatedUser));
-      refresh();
+      await refresh();
       setSaved(true);
     }
     return updatedUser;
@@ -486,9 +505,19 @@ export function AdminProfile() {
 
   return (
     <>
-      <PageTitle eyebrow="Sesión actual" title="Perfil del administrador" />
+      <PageTitle eyebrow="Sesión actual" title={`Perfil de ${session?.tipo || 'usuario'}`} />
       {saved && <div role="status" className="alert alert-success">Perfil actualizado.</div>}
-      <AccountForm initial={session} includeRun={false} submitLabel="Actualizar perfil" onSubmit={saveProfile} />
+      {isAdmin ? (
+        <AccountForm initial={session} includeRun={false} submitLabel="Actualizar perfil" onSubmit={saveProfile} />
+      ) : (
+        <section className="summary-panel">
+          <p><strong>RUN:</strong> {session?.run}</p>
+          <p><strong>Nombre:</strong> {session?.nombre} {session?.apellidos}</p>
+          <p><strong>Correo:</strong> {session?.correo}</p>
+          <p><strong>Rol:</strong> {session?.tipo}</p>
+          <p><strong>Dirección:</strong> {session?.direccion}, {session?.comuna}</p>
+        </section>
+      )}
     </>
   );
 }

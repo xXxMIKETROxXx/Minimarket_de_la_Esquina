@@ -1,9 +1,12 @@
+export const API_URL = 'http://localhost:3000/api/v1';
+
 export const STORAGE_KEYS = {
   products: 'minimarket.productos',
   categories: 'minimarket.categorias',
   users: 'minimarket.usuarios',
   cart: 'minimarket.carrito',
   session: 'minimarket.sesion',
+  token: 'minimarket.token',
   orders: 'minimarket.ordenes',
 };
 
@@ -18,35 +21,13 @@ export const INITIAL_PRODUCTS = [
   { codigo: 'PRD-008', id: 'limpieza', nombre: 'Detergente líquido 1 litro', descripcion: 'Detergente para la limpieza del hogar.', precio: 2490, stock: 10, critico: 3, categoria: 'Limpieza', imagen: 'detergente.jpg', oferta: false },
 ];
 
-const OLD_PRODUCT_IMAGES = {
-  leche: ['leche.svg', 'leche.jpg'],
-  pan: ['pan.svg', 'pan.jpg'],
-  bebida: ['bebida.svg', 'bebida.jpg'],
-  galletas: ['galletas.svg', 'galletas.jpg'],
-  arroz: ['arroz.svg', 'arroz.jpg'],
-  fideos: ['fideos.svg', 'fideos.jpg'],
-  snacks: ['snacks.svg', 'snacks.jpg'],
-  limpieza: ['limpieza.svg', 'detergente.jpg'],
-};
-
-function updateOldProductImages(products) {
-  return products.map((product) => {
-    const oldImage = OLD_PRODUCT_IMAGES[product.id];
-    if (oldImage && product.imagen === oldImage[0]) {
-      return { ...product, imagen: oldImage[1] };
-    }
-    return product;
-  });
-}
-
 export const INITIAL_CATEGORIES = ['Abarrotes', 'Bebidas', 'Galletas', 'Lácteos', 'Limpieza', 'Panadería', 'Snacks'];
+
 export const REGIONES = {
   metropolitana: { nombre: 'Región Metropolitana', comunas: ['Santiago', 'Maipú', 'Providencia'] },
   valparaiso: { nombre: 'Región de Valparaíso', comunas: ['Valparaíso', 'Viña del Mar', 'Quilpué'] },
   ohiggins: { nombre: "Región de O'Higgins", comunas: ['Rancagua', 'Machalí', 'San Fernando'] },
 };
-
-const ADMIN_USER = { run: '190110222', nombre: 'Administrador', apellidos: 'La Esquina', correo: 'admin@duoc.cl', password: 'admin1', tipo: 'Administrador', region: 'metropolitana', comuna: 'Santiago', direccion: 'Calle Principal 1' };
 
 function read(key, fallback) {
   try {
@@ -62,135 +43,210 @@ function write(key, value) {
   return value;
 }
 
-function readLegacy(key, fallback) {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored === null ? fallback : JSON.parse(stored);
-  } catch {
-    return fallback;
-  }
+// ==========================================
+// GESTIÓN DE TOKEN JWT Y PETICIONES HTTP
+// ==========================================
+export function getToken() {
+  return localStorage.getItem(STORAGE_KEYS.token) || '';
 }
 
-export function getProducts() {
-  const stored = read(STORAGE_KEYS.products, null);
-  if (Array.isArray(stored)) {
-    const products = updateOldProductImages(stored);
-    if (products.some((product, index) => product !== stored[index])) {
-      return write(STORAGE_KEYS.products, products);
-    }
-    return stored;
-  }
-  const legacy = readLegacy('productos', INITIAL_PRODUCTS);
-  const products = Array.isArray(legacy) ? legacy : INITIAL_PRODUCTS;
-  return write(STORAGE_KEYS.products, updateOldProductImages(products));
+export function setToken(token) {
+  if (token) localStorage.setItem(STORAGE_KEYS.token, token);
+  else localStorage.removeItem(STORAGE_KEYS.token);
 }
-export function saveProducts(value) { return write(STORAGE_KEYS.products, value); }
-export function getCategories() {
-  const stored = read(STORAGE_KEYS.categories, null);
-  if (Array.isArray(stored)) return stored;
-  const legacyCategories = [...new Set(readLegacy('productos', INITIAL_PRODUCTS).map((product) => product.categoria).filter(Boolean))];
-  return write(STORAGE_KEYS.categories, legacyCategories.length ? legacyCategories : INITIAL_CATEGORIES);
-}
-export function saveCategories(value) { return write(STORAGE_KEYS.categories, value); }
-export function getUsers() {
-  const stored = read(STORAGE_KEYS.users, null);
-  const legacy = readLegacy('usuarios', []);
-  const source = Array.isArray(stored) ? stored : (Array.isArray(legacy) ? legacy : []);
-  const users = source.map((user) => {
-    const communes = REGIONES[user.region]?.comunas || [];
-    const comuna = communes.find((name) => name.toLowerCase().replaceAll(' ', '-') === String(user.comuna || '').toLowerCase());
-    return comuna && comuna !== user.comuna ? { ...user, comuna } : user;
+
+async function apiRequest(endpoint, options = {}) {
+  const token = getToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
+  };
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers,
   });
-  if (!users.some((user) => user.correo === ADMIN_USER.correo)) users.push(ADMIN_USER);
-  if (Array.isArray(stored) && users.length === stored.length && users.every((user, index) => user === stored[index])) return stored;
-  return write(STORAGE_KEYS.users, users);
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `Error en el servidor (${response.status})`);
+  }
+  return data;
 }
+
+// ==========================================
+// LECTURA LOCAL EN CACHÉ (SÍNCRONA)
+// ==========================================
+export function getProducts() { return read(STORAGE_KEYS.products, INITIAL_PRODUCTS); }
+export function saveProducts(value) { return write(STORAGE_KEYS.products, value); }
+export function getCategories() { return read(STORAGE_KEYS.categories, INITIAL_CATEGORIES); }
+export function saveCategories(value) { return write(STORAGE_KEYS.categories, value); }
+export function getUsers() { return read(STORAGE_KEYS.users, []); }
 export function saveUsers(value) { return write(STORAGE_KEYS.users, value); }
 export function getCart() { return read(STORAGE_KEYS.cart, []); }
 export function saveCart(value) { return write(STORAGE_KEYS.cart, value); }
-export function getSession() {
-  const stored = read(STORAGE_KEYS.session, null);
-  if (stored) {
-    const communes = REGIONES[stored.region]?.comunas || [];
-    const comuna = communes.find((name) => name.toLowerCase().replaceAll(' ', '-') === String(stored.comuna || '').toLowerCase());
-    return comuna && comuna !== stored.comuna ? write(STORAGE_KEYS.session, { ...stored, comuna }) : stored;
-  }
-  const legacy = readLegacy('usuarioActivo', null);
-  if (!legacy) return null;
-  const communes = REGIONES[legacy.region]?.comunas || [];
-  const comuna = communes.find((name) => name.toLowerCase().replaceAll(' ', '-') === String(legacy.comuna || '').toLowerCase());
-  const migrated = write(STORAGE_KEYS.session, comuna ? { ...legacy, comuna } : legacy);
-  localStorage.removeItem('usuarioActivo');
-  return migrated;
-}
+export function getSession() { return read(STORAGE_KEYS.session, null); }
 export function setSession(value) { return write(STORAGE_KEYS.session, value); }
 export function clearSession() {
   localStorage.removeItem(STORAGE_KEYS.session);
+  localStorage.removeItem(STORAGE_KEYS.token);
   localStorage.removeItem('usuarioActivo');
 }
 export function getOrders() { return read(STORAGE_KEYS.orders, []); }
 export function getOrder(id) { return getOrders().find((order) => order.id === id) || null; }
-export function addOrder(order) { return write(STORAGE_KEYS.orders, [...getOrders(), order]); }
+export function addOrder(order) { return write(STORAGE_KEYS.orders, [order, ...getOrders()]); }
 
-export function createProduct(product) {
-  if (!validateProduct(product)) throw new Error('Los datos del producto no son válidos.');
-  if (getProducts().some((item) => item.codigo === product.codigo || item.id === product.id)) throw new Error('El código o identificador ya existe.');
-  saveProducts([...getProducts(), product]);
-  return product;
-}
+// ==========================================
+// SINCRONIZACIÓN CON EL BACKEND (API REST)
+// ==========================================
+export async function syncAllFromApi() {
+  try {
+    const [productos, categorias] = await Promise.all([
+      apiRequest('/productos'),
+      apiRequest('/categorias'),
+    ]);
+    saveProducts(productos);
+    saveCategories(categorias);
 
-export function updateProduct(id, changes) {
-  const products = getProducts();
-  const index = products.findIndex((product) => product.id === id);
-  if (index < 0) throw new Error('No se encontró el producto.');
-  if (products.some((product, position) => position !== index && (product.codigo === changes.codigo || product.id === changes.id))) throw new Error('El código o identificador ya existe.');
-  const updated = { ...products[index], ...changes };
-  if (!validateProduct(updated)) throw new Error('Los datos del producto no son válidos.');
-  products[index] = updated;
-  saveProducts(products);
-  return products[index];
-}
-
-export function deleteProduct(id) { saveProducts(getProducts().filter((product) => product.id !== id)); }
-export function createCategory(name) {
-  const categories = getCategories();
-  if (!name.trim() || categories.includes(name.trim())) throw new Error('La categoría ya existe o no es válida.');
-  saveCategories([...categories, name.trim()]);
-}
-export function updateCategory(previous, next) {
-  const name = next.trim();
-  if (!name || (previous !== name && getCategories().includes(name))) throw new Error('El nombre de categoría no es válido.');
-  saveCategories(getCategories().map((category) => category === previous ? name : category));
-  saveProducts(getProducts().map((product) => product.categoria === previous ? { ...product, categoria: name } : product));
-}
-export function deleteCategory(name) {
-  if (getProducts().some((product) => product.categoria === name)) throw new Error('No se puede eliminar una categoría que contiene productos.');
-  saveCategories(getCategories().filter((category) => category !== name));
+    const session = getSession();
+    const token = getToken();
+    if (session && token) {
+      if (session.tipo === 'Administrador') {
+        const [usuarios, boletas] = await Promise.all([
+          apiRequest('/usuarios'),
+          apiRequest('/boletas'),
+        ]);
+        saveUsers(usuarios);
+        write(STORAGE_KEYS.orders, boletas);
+      } else if (session.tipo === 'Vendedor') {
+        const boletas = await apiRequest('/boletas');
+        write(STORAGE_KEYS.orders, boletas);
+      }
+    }
+  } catch (err) {
+    console.warn('No se pudo sincronizar completamente con la API:', err.message);
+  }
 }
 
-export function createUser(user) {
+// ==========================================
+// AUTENTICACIÓN REAL CON TOKEN JWT
+// ==========================================
+export async function loginApi(correo, password) {
+  const result = await apiRequest('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ correo, password }),
+  });
+  setToken(result.token);
+  setSession(result.usuario);
+  await syncAllFromApi();
+  return result.usuario;
+}
+
+export async function registerApi(user) {
   if (!validateUser(user)) throw new Error('Los datos del usuario no son válidos.');
-  const users = getUsers();
-  if (users.some((item) => item.run === user.run || item.correo === user.correo)) throw new Error('El RUN o correo ya están registrados.');
-  saveUsers([...users, user]);
-  return user;
-}
-export function updateUser(run, changes) {
-  const users = getUsers();
-  const index = users.findIndex((user) => user.run === run);
-  if (index < 0) throw new Error('No se encontró el usuario.');
-  if (users.some((user, position) => position !== index && (user.run === changes.run || user.correo === changes.correo))) throw new Error('El RUN o correo ya están registrados.');
-  const updated = { ...users[index], ...changes };
-  if (!validateUser(updated)) throw new Error('Los datos del usuario no son válidos.');
-  users[index] = updated;
-  saveUsers(users);
-  return users[index];
-}
-export function deleteUser(run) {
-  if (run === ADMIN_USER.run) throw new Error('No se puede eliminar la cuenta administradora inicial.');
-  saveUsers(getUsers().filter((user) => user.run !== run));
+  return await apiRequest('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(user),
+  });
 }
 
+// ==========================================
+// OPERACIONES CRUD CONECTADAS A SQLITE
+// ==========================================
+export async function createProduct(product) {
+  if (!validateProduct(product)) throw new Error('Los datos del producto no son válidos.');
+  const created = await apiRequest('/productos', {
+    method: 'POST',
+    body: JSON.stringify(product),
+  });
+  saveProducts([...getProducts(), created]);
+  return created;
+}
+
+export async function updateProduct(id, changes) {
+  const current = getProducts().find((p) => p.id === id || p.codigo === id);
+  if (!current) throw new Error('No se encontró el producto.');
+  const merged = { ...current, ...changes };
+  if (!validateProduct(merged)) throw new Error('Los datos del producto no son válidos.');
+
+  const updated = await apiRequest(`/productos/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(changes),
+  });
+  saveProducts(getProducts().map((p) => (p.codigo === updated.codigo ? updated : p)));
+  return updated;
+}
+
+export async function deleteProduct(id) {
+  await apiRequest(`/productos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  saveProducts(getProducts().filter((p) => p.id !== id && p.codigo !== id));
+}
+
+export async function createCategory(name) {
+  if (!name.trim()) throw new Error('El nombre de la categoría no es válido.');
+  const created = await apiRequest('/categorias', {
+    method: 'POST',
+    body: JSON.stringify({ nombre: name.trim() }),
+  });
+  saveCategories([...getCategories(), created.nombre]);
+}
+
+export async function updateCategory(previous, next) {
+  const name = next.trim();
+  if (!name || (previous !== name && getCategories().includes(name))) {
+    throw new Error('El nombre de categoría no es válido.');
+  }
+  await createCategory(name);
+  const affected = getProducts().filter((p) => p.categoria === previous);
+  for (const prod of affected) {
+    await updateProduct(prod.id, { categoria: name });
+  }
+  await deleteCategory(previous);
+}
+
+export async function deleteCategory(name) {
+  await apiRequest(`/categorias/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  saveCategories(getCategories().filter((c) => c !== name));
+}
+
+export async function createUser(user) {
+  if (!validateUser(user)) throw new Error('Los datos del usuario no son válidos.');
+  const created = await apiRequest('/usuarios', {
+    method: 'POST',
+    body: JSON.stringify(user),
+  });
+  saveUsers([...getUsers(), created]);
+  return created;
+}
+
+export async function updateUser(run, changes) {
+  const current = getUsers().find((u) => u.run === run);
+  if (!current) throw new Error('No se encontró el usuario.');
+  const merged = { ...current, ...changes };
+  if (changes.password && !validatePassword(changes.password)) {
+    throw new Error('La contraseña debe tener entre 4 y 10 caracteres.');
+  }
+  if (!validateRun(merged.run) || !merged.nombre?.trim() || !validateEmail(merged.correo) || !validateEmailDomain(merged.correo)) {
+    throw new Error('Los datos del usuario no son válidos.');
+  }
+
+  const updated = await apiRequest(`/usuarios/${encodeURIComponent(run)}`, {
+    method: 'PUT',
+    body: JSON.stringify(changes),
+  });
+  saveUsers(getUsers().map((u) => (u.run === run ? updated : u)));
+  return updated;
+}
+
+export async function deleteUser(run) {
+  await apiRequest(`/usuarios/${encodeURIComponent(run)}`, { method: 'DELETE' });
+  saveUsers(getUsers().filter((u) => u.run !== run));
+}
+
+// ==========================================
+// VALIDACIONES DE NEGOCIO (FRONTEND)
+// ==========================================
 export function validateRun(run) {
   if (!/^[0-9]{7,8}[0-9kK]$/.test(run || '')) return false;
   const number = run.slice(0, -1);
@@ -214,6 +270,9 @@ export function validateProduct(product) {
   return Boolean(product.codigo && product.codigo.length >= 3 && product.nombre && product.nombre.length <= 100 && (product.descripcion || '').length <= 500 && String(product.precio).trim() !== '' && Number.isFinite(Number(product.precio)) && Number(product.precio) >= 0 && String(product.stock).trim() !== '' && Number.isInteger(Number(product.stock)) && Number(product.stock) >= 0 && String(product.critico).trim() !== '' && Number.isInteger(Number(product.critico)) && Number(product.critico) >= 0 && product.categoria);
 }
 
+// ==========================================
+// CARRITO Y PROCESO DE COMPRA (BOLETAS API)
+// ==========================================
 export function addToCart(cart, productId, quantity = 1) {
   const product = getProducts().find((item) => item.id === productId);
   if (!product || !Number.isInteger(quantity) || quantity < 1) throw new Error('Producto o cantidad no válidos.');
@@ -238,27 +297,25 @@ export function cartSummary(cart) {
   return { lines, total: lines.reduce((sum, item) => sum + item.subtotal, 0), count: lines.reduce((sum, item) => sum + item.cantidad, 0) };
 }
 
-export function completePurchase(details, outcome = 'success') {
+export async function completePurchase(details, outcome = 'success') {
   const cart = getCart();
   const summary = cartSummary(cart);
   if (!summary.lines.length) throw new Error('El carrito está vacío.');
   if (outcome !== 'success' && outcome !== 'error') throw new Error('El resultado de simulación no es válido.');
-  if (summary.lines.some((line) => line.cantidad > getProducts().find((product) => product.id === line.id)?.stock)) throw new Error('El stock cambió. Ajusta las cantidades del carrito e inténtalo nuevamente.');
-  const order = {
-    id: `ORD-${Date.now()}`,
-    fecha: new Date().toISOString(),
-    estado: outcome === 'success' ? 'Pagada (simulación)' : 'Pago rechazado (simulación)',
-    cliente: details,
-    productos: summary.lines,
-    total: summary.total,
-  };
+
+  const order = await apiRequest('/boletas', {
+    method: 'POST',
+    body: JSON.stringify({
+      cliente: details,
+      items: cart,
+      outcome,
+    }),
+  });
+
   addOrder(order);
   if (outcome === 'success') {
-    saveProducts(getProducts().map((product) => {
-      const purchased = summary.lines.find((line) => line.id === product.id);
-      return purchased ? { ...product, stock: product.stock - purchased.cantidad } : product;
-    }));
     saveCart([]);
+    await syncAllFromApi();
   }
   return order;
 }

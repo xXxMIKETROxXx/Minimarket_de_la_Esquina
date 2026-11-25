@@ -16,14 +16,14 @@ export function AccountForm({ initial = {}, submitLabel, onSubmit, withRole = fa
   const [error, setError] = useState('');
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     setError('');
     if ((includeRun && !validateRun(form.run)) || !form.nombre.trim() || !form.apellidos.trim() || !validateEmail(form.correo) || !validateEmailDomain(form.correo) || !validatePassword(form.password) || !form.direccion.trim()) {
       setError(includeRun && !validateRun(form.run) ? 'El RUN no es válido. Escríbelo sin puntos ni guion.' : 'Revisa los campos obligatorios, el correo permitido y la contraseña de 4 a 10 caracteres.');
       return;
     }
-    const result = onSubmit(form);
+    const result = await onSubmit(form);
     if (result !== false && result !== null) setError('');
   }
 
@@ -45,13 +45,15 @@ export function LoginForm({ onLogin }) {
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
+    setError('');
     if (!validateEmail(correo) || !validateEmailDomain(correo) || !validatePassword(password)) {
       setError('Ingresa un correo permitido y una contraseña de 4 a 10 caracteres.');
       return;
     }
-    if (!onLogin(correo, password)) setError('Correo o contraseña incorrectos.');
+    const ok = await onLogin(correo, password);
+    if (!ok) setError('Correo o contraseña incorrectos.');
   }
   return <form className="form-panel" onSubmit={submit} noValidate>
     {error && <div className="alert alert-danger" role="alert">{error}</div>}

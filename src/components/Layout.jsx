@@ -7,12 +7,15 @@ export function Header({ admin = false }) {
   const { cart, session, logout } = useStore();
   const location = useLocation();
   const count = cart.reduce((total, item) => total + item.quantity, 0);
+  const isStaff = session?.tipo === 'Administrador' || session?.tipo === 'Vendedor';
+
   const publicLinks = [
     ['/productos', 'Productos'], ['/categorias', 'Categorías'], ['/ofertas', 'Ofertas'], ['/blogs', 'Blogs'], ['/nosotros', 'Nosotros'], ['/contacto', 'Contacto'], ['/registro', 'Registro'],
   ];
-  const adminLinks = [
-    ['/admin', 'Panel'], ['/admin/productos', 'Productos'], ['/admin/categorias', 'Categorías'], ['/admin/ordenes', 'Órdenes'], ['/admin/usuarios', 'Usuarios'], ['/admin/reportes', 'Reportes'], ['/admin/perfil', 'Perfil'],
-  ];
+
+  const adminLinks = session?.tipo === 'Vendedor'
+    ? [['/admin', 'Panel'], ['/admin/productos', 'Productos'], ['/admin/ordenes', 'Órdenes'], ['/admin/perfil', 'Perfil']]
+    : [['/admin', 'Panel'], ['/admin/productos', 'Productos'], ['/admin/categorias', 'Categorías'], ['/admin/ordenes', 'Órdenes'], ['/admin/usuarios', 'Usuarios'], ['/admin/reportes', 'Reportes'], ['/admin/perfil', 'Perfil']];
 
   return (
     <header className="site-header">
@@ -27,9 +30,10 @@ export function Header({ admin = false }) {
             {(admin ? adminLinks : publicLinks).map(([to, label]) => (
               <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>{label}</NavLink>
             ))}
+            {!admin && isStaff && <NavLink to="/admin" className="nav-link fw-semibold">Panel ({session.tipo})</NavLink>}
             {!admin && <NavLink to="/carrito" className={`nav-link cart-link${location.pathname === '/carrito' ? ' active' : ''}`}>Carrito <span className="cart-count">{count}</span></NavLink>}
             {!admin && (session ? <button className="btn btn-sm btn-outline-light ms-lg-2" onClick={logout}>Cerrar sesión</button> : <NavLink to="/login" className="btn btn-sm btn-outline-light ms-lg-2">Ingresar</NavLink>)}
-            {admin && <><NavLink to="/" className="nav-link">Ir a la tienda</NavLink><span className="nav-session">{session?.nombre}</span><button className="btn btn-sm btn-outline-light ms-lg-2" onClick={logout}>Cerrar sesión</button></>}
+            {admin && <><NavLink to="/" className="nav-link">Ir a la tienda</NavLink><span className="nav-session">{session?.nombre} ({session?.tipo})</span><button className="btn btn-sm btn-outline-light ms-lg-2" onClick={logout}>Cerrar sesión</button></>}
           </div>
         </div>
       </nav>

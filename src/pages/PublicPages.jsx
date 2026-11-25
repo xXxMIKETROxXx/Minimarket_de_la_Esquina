@@ -68,8 +68,8 @@ export function Register() {
   const { register } = useStore();
   const [saved, setSaved] = useState(false);
   const navigate = useNavigate();
-  function submit(user) {
-    const result = register({ ...user, tipo: 'Cliente' });
+  async function submit(user) {
+    const result = await register({ ...user, tipo: 'Cliente' });
     if (result) { setSaved(true); window.setTimeout(() => navigate('/login'), 900); }
     return result;
   }
@@ -79,12 +79,15 @@ export function Register() {
 export function Login() {
   const { login } = useStore();
   const navigate = useNavigate();
-  function submit(email, password) {
-    const ok = login(email, password);
-    if (ok) navigate(getSession()?.tipo === 'Administrador' ? '/admin' : '/productos');
+  async function submit(email, password) {
+    const ok = await login(email, password);
+    if (ok) {
+      const role = getSession()?.tipo;
+      navigate(role === 'Administrador' || role === 'Vendedor' ? '/admin' : '/productos');
+    }
     return ok;
   }
-  return <><PageTitle eyebrow="Bienvenido de vuelta" title="Iniciar sesión" /><div className="login-note"><strong>Acceso administrador de demostración</strong><span>admin@duoc.cl · admin1</span></div><LoginForm onLogin={submit} /><p className="mt-3">¿Aún no tienes cuenta? <Link to="/registro">Regístrate</Link></p></>;
+  return <><PageTitle eyebrow="Bienvenido de vuelta" title="Iniciar sesión" /><div className="login-note"><strong>Cuentas de demostración</strong><span>Admin: admin@duoc.cl · admin1 | Vendedor: vendedor@duoc.cl · vend12</span></div><LoginForm onLogin={submit} /><p className="mt-3">¿Aún no tienes cuenta? <Link to="/registro">Regístrate</Link></p></>;
 }
 
 export function About() {
@@ -121,10 +124,10 @@ export function Checkout() {
   const [error, setError] = useState('');
   if (!summary.lines.length) return <><PageTitle title="No hay productos para comprar" /><Link className="btn btn-success" to="/productos">Volver a productos</Link></>;
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     if (!form.nombre.trim() || !form.apellidos.trim() || !form.direccion.trim() || !validateEmail(form.correo) || !validateEmailDomain(form.correo)) { setError('Completa nombre, apellidos, dirección y un correo permitido.'); return; }
-    const order = checkout(form, outcome);
+    const order = await checkout({ ...form, run: session?.run }, outcome);
     if (!order) { setError('No fue posible crear el pedido. Revisa el carrito y el stock.'); return; }
     navigate(`/compra/${outcome}/${order.id}`);
   }

@@ -12,13 +12,7 @@ export function StoreProvider({ children }) {
   const [session, setSession] = useState(data.getSession);
   const [notice, setNotice] = useState('');
 
-  useEffect(() => {
-    if (!notice) return undefined;
-    const timer = window.setTimeout(() => setNotice(''), 3500);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
-  const refresh = () => {
+  const refreshLocal = () => {
     setProducts(data.getProducts());
     setCategories(data.getCategories());
     setUsers(data.getUsers());
@@ -27,10 +21,28 @@ export function StoreProvider({ children }) {
     setSession(data.getSession());
   };
 
-  const run = (action) => {
+  // Al cargar la aplicación, traer los datos reales desde SQLite (Backend)
+  useEffect(() => {
+    data.syncAllFromApi().then(() => {
+      refreshLocal();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = window.setTimeout(() => setNotice(''), 3500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const refresh = async () => {
+    await data.syncAllFromApi();
+    refreshLocal();
+  };
+
+  const run = async (action) => {
     try {
-      const result = action();
-      refresh();
+      const result = await action();
+      refreshLocal();
       return result;
     } catch (error) {
       setNotice(error.message);
@@ -48,18 +60,24 @@ export function StoreProvider({ children }) {
   const remove = (productId) => run(() => data.saveCart(data.getCart().filter((item) => item.productId !== productId)));
   const emptyCart = () => run(() => data.saveCart([]));
 
-  const register = (user) => run(() => data.createUser(user));
-  const login = (correo, password) => {
-    const user = data.getUsers().find((item) => item.correo.toLowerCase() === correo.toLowerCase() && item.password === password);
-    if (!user) {
-      setNotice('Correo o contraseña incorrectos.');
+  const register = (user) => run(() => data.registerApi(user));
+
+  const login = async (correo, password) => {
+    try {
+      await data.loginApi(correo, password);
+      refreshLocal();
+      return true;
+    } catch (error) {
+      setNotice(error.message);
       return false;
     }
-    data.setSession(user);
-    refresh();
-    return true;
   };
-  const logout = () => run(() => data.clearSession());
+
+  const logout = () => run(() => {
+    data.clearSession();
+    data.saveUsers([]);
+    localStorage.removeItem(data.STORAGE_KEYS.orders);
+  });
 
   const checkout = (details, outcome) => run(() => data.completePurchase(details, outcome));
 
